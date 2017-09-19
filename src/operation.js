@@ -21,15 +21,14 @@ export default class Operation {
   _ops: Array<PrimitiveOperation>;
 
   static transform(op1: Operation, op2: Operation): [Operation, Operation] {
-    // return [Operation._transformOneWay(op1, op2), Operation._transformOneWay(op2, op1)];
-    return [Operation._transformOneWay(op1, op2), op2];
+    return [Operation._transformOneWay(op1, op2, 2), Operation._transformOneWay(op2, op1, 1)];
   }
 
   /*
    * Returns op1', meaning op2.compose(op1').apply(docStr) equals
    * op1.compose(op2').apply(docStr);
    */
-  static _transformOneWay(op1: Operation, op2: Operation): Operation {
+  static _transformOneWay(op1: Operation, op2: Operation, insertPriority: [1, 2]): Operation {
     const newOp = new Operation();
 
     const ops1 = op1._ops.slice();
@@ -41,7 +40,19 @@ export default class Operation {
     while (i < ops1.length || j < ops2.length) {
       Logger.debug(`transform (${i}, ${ops1[i]}), (${j}, ${ops2[j]}), [${newOp._ops.toString()}]`);
 
-      if (isInsert(ops1[i])) {
+      if (isInsert(ops1[i]) && isInsert(ops2[j])) {
+        if (insertPriority === 1) {
+          newOp.insert(ops1[i]);
+          newOp.retain(ops2[j].length);
+          i++;
+          j++;
+        } else {
+          newOp.retain(ops2[j].length);
+          newOp.insert(ops1[i]);
+          i++;
+          j++;
+        }
+      } else if (isInsert(ops1[i])) {
         // $FlowIgnore
         newOp.insert(ops1[i]);
         i++;
@@ -123,10 +134,8 @@ export default class Operation {
           ops2[j] = p2 - p1;
           j++;
         }
-      } else if (typeof ops1[i] === 'undefined' && isRemove(ops2[j])) {
-        j++;
       } else {
-        throw new Error('Unknown Error');
+        throw new Error('Unknown Operation transform');
       }
     }
 
@@ -138,13 +147,25 @@ export default class Operation {
   }
 
   retain(op: number) {
-    if (op > 0) {
+    const lastOp = this._ops[this._ops.length - 1];
+
+    if (isRetain(lastOp)) {
+      this._ops[this._ops.length - 1] = lastOp + op;
+    } else {
       this._ops.push(op);
     }
   }
 
   remove(op: number) {
-    this._ops.push(-Math.abs(op));
+    const lastOp = this._ops[this._ops.length - 1];
+
+    const neg = -Math.abs(op);
+
+    if (isRemove(lastOp)) {
+      this._ops[this._ops.length - 1] = lastOp + neg;
+    } else {
+      this._ops.push(neg);
+    }
   }
 
   insert(op: string) {

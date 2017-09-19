@@ -56,7 +56,7 @@ describe('Operation', () => {
     });
 
     describe('when transforming [Insert(a)] with [Insert(b)]', () => {
-      xit('should return [Retain(1),Insert(a)], [Insert(b),Retain(1)]', () => {
+      it('should return [Retain(1),Insert(a)], [Insert(b),Retain(1)]', () => {
         const op1 = new Operation(['a']);
         const op2 = new Operation(['b']);
 
@@ -68,18 +68,3 @@ describe('Operation', () => {
     });
   });
 });
-
-
-/*
- * Server sends remove
- * Build up a transformation from the remove
- */
-
-
-/*
- * Server Payload
- *  {
- *    parent: 5,
- *    ops: [100, "foo", 100],
- *  }
- */
