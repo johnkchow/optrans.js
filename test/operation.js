@@ -1,5 +1,4 @@
 import Operation from '../src/operation';
-import Logger from '../src/logger';
 
 describe('Operation', () => {
   describe('prototype.compose', () => {
@@ -64,6 +63,32 @@ describe('Operation', () => {
 
         expect(results[0]._ops).to.ordered.members([1, 'a']);
         expect(results[1]._ops).to.ordered.members(['b', 1]);
+      });
+    });
+
+    describe('when transforming [Retain(2),Insert(a),Remove(1)] with [Retain(1),Insert(b),Retain(2)]', () => {
+      it('should return [Retain(3),Insert(a),Retain(1),Remove(1)], [Retain(1),Insert(b),Retain(2)]', () => {
+        console.log('\n\nSTART');
+        const op1 = new Operation([2, 'a', 1, -1]);
+        const op2 = new Operation([1, 'b', 2]);
+
+        const results = Operation.transform(op1, op2);
+
+        expect(results[0]._ops).to.ordered.members([3, 'a', 1, -1]);
+        expect(results[1]._ops).to.ordered.members([1, 'b', 2]);
+      });
+    });
+
+    describe('when transforming [Insert(a),Remove(1)] with [Retain(1),Insert(b)]', () => {
+      it('should return [Insert(a),Remove(1),Retain(1)], [Retain(1),Insert(b)]', () => {
+        console.log('\n\nSTART');
+        const op1 = new Operation(['a', -1]);
+        const op2 = new Operation([1, 'b']);
+
+        const results = Operation.transform(op1, op2);
+
+        expect(results[0]._ops).to.ordered.members(['a', -1, 1]);
+        expect(results[1]._ops).to.ordered.members([1, 'b']);
       });
     });
   });

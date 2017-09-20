@@ -9,7 +9,7 @@ module.exports = {
   plugins: [
     new webpack.DefinePlugin({
       'process.env.LOG_LEVEL': JSON.stringify(process.env.LOG_LEVEL || 'debug'),
-    })
+    }),
   ],
   module: {
     rules: [
@@ -18,11 +18,9 @@ module.exports = {
         exclude: /node_modules/,
         use: {
           loader: 'babel-loader',
-          options: {
-            cacheDirectory: true,
-          }
-        }
-      }
+          options: { cacheDirectory: true },
+        },
+      },
     ],
   },
 };

@@ -28,7 +28,7 @@ export default class Operation {
    * Returns op1', meaning op2.compose(op1').apply(docStr) equals
    * op1.compose(op2').apply(docStr);
    */
-  static _transformOneWay(op1: Operation, op2: Operation, insertPriority: [1, 2]): Operation {
+  static _transformOneWay(op1: Operation, op2: Operation, insertPriority: 1 | 2): Operation {
     const newOp = new Operation();
 
     const ops1 = op1._ops.slice();
@@ -42,12 +42,16 @@ export default class Operation {
 
       if (isInsert(ops1[i]) && isInsert(ops2[j])) {
         if (insertPriority === 1) {
+          // $FlowIgnore
           newOp.insert(ops1[i]);
+          // $FlowIgnore
           newOp.retain(ops2[j].length);
           i++;
           j++;
         } else {
+          // $FlowIgnore
           newOp.retain(ops2[j].length);
+          // $FlowIgnore
           newOp.insert(ops1[i]);
           i++;
           j++;
@@ -71,9 +75,13 @@ export default class Operation {
           i++;
           j++;
         } else if (p1 > p2) {
-          throw new Error('WIP');
+          newOp.retain(p2);
+          ops1[i] = p1 - p2;
+          j++;
         } else if (p1 < p2) {
-          throw new Error('WIP');
+          newOp.retain(p1);
+          ops2[j] = p2 - p1;
+          i++;
         }
       } else if (isRetain(ops1[i]) && isRemove(ops2[j])) {
         // $FlowIgnore
@@ -134,6 +142,20 @@ export default class Operation {
           ops2[j] = p2 - p1;
           j++;
         }
+      } else if (isRemove(ops1[i])) {
+        // $FlowIgnore
+        newOp.remove(ops1[i]);
+        i++;
+      } else if (isRemove(ops2[j])) {
+        const lastOp = newOp._ops[newOp._ops.length - 1]
+
+        if (!isRetain(lastOp)) {
+          throw new Error("Remove operation encountered but last operation was not retain");
+        }
+
+        // $FlowIgnore
+        newOp._ops[newOp._ops.length - 1] = lastOp + ops2[j];
+        j++;
       } else {
         throw new Error('Unknown Operation transform');
       }
