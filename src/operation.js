@@ -99,10 +99,9 @@ export default class Operation {
           ops2[j] = p1 + p2;
           i++;
         }
-      // isRetain(ops1[i]) and (isInsertOrNothing)
-      } else if (isRetain(ops1[i])) {
+      } else if (isRetain(ops1[i])) { // isRetain(ops1[i]) and (isInsertOrNothing)
         // $FlowIgnore
-        newOps.retain(ops1[i]);
+        newOp.retain(ops1[i]);
         i++;
       } else if (isRemove(ops1[i]) && isRetain(ops2[j])) {
         // $FlowIgnore
@@ -157,7 +156,7 @@ export default class Operation {
         newOp._ops[newOp._ops.length - 1] = lastOp + ops2[j];
         j++;
       } else {
-        throw new Error('Unknown Operation transform');
+        throw new Error('Unknown operation transform');
       }
     }
 

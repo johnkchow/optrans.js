@@ -89,6 +89,52 @@ describe('Operation', () => {
 
         expect(results[0]._ops).to.ordered.members(['a', -1, 1]);
         expect(results[1]._ops).to.ordered.members([1, 'b']);
+      })
+    });
+
+    describe('when transforming [Retain(1),Remove(1)] with [Retain(2)]', () => {
+      it('should return [Retain(1),Remove(1)], [Retain(1)]', () => {
+        const op1 = new Operation([1, -1]);
+        const op2 = new Operation([2]);
+
+        const results = Operation.transform(op1, op2);
+
+        expect(results[0]._ops).to.ordered.members([1, -1]);
+        expect(results[1]._ops).to.ordered.members([1]);
+      });
+    });
+
+    describe('when transforming [Retain(2)] with [Retain(1)]', () => {
+      it('should throw error', () => {
+        const op1 = new Operation([2]);
+        const op2 = new Operation([1]);
+
+        const trans = () => Operation.transform(op1, op2);
+
+        expect(trans).to.throw('Unknown operation transform');
+      });
+    });
+
+    describe('when transforming [Retain(1)] with [Insert(a)]', () => {
+      it('should throw error', () => {
+        const op1 = new Operation([1]);
+        const op2 = new Operation(['a']);
+
+        const trans = () => Operation.transform(op1, op2);
+
+        expect(trans).to.throw('Unknown operation transform');
+      });
+    });
+
+    describe('when transforming [Retain(1)] with [Retain(1),Insert(a)]', () => {
+      it('should return [Retain(2)], [Retain(1),Insert(a)]', () => {
+        const op1 = new Operation([1]);
+        const op2 = new Operation([1, 'a']);
+
+        const results = Operation.transform(op1, op2);
+
+        expect(results[0]._ops).to.ordered.members([2]);
+        expect(results[1]._ops).to.ordered.members([1, 'a']);
       });
     });
   });

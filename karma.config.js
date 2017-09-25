@@ -11,8 +11,8 @@ const files = [
 module.exports = (config) => {
   config.set({
     frameworks: ['mocha', 'chai'],
-    files: files,
-    reporters: ['progress', 'notify'],
+    files,
+    reporters: ['progress'],
     port: 9876,
     colors: true,
     browsers: ['Chrome', 'ChromeHeadless'],
