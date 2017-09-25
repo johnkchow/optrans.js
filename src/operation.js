@@ -146,10 +146,10 @@ export default class Operation {
         newOp.remove(ops1[i]);
         i++;
       } else if (isRemove(ops2[j])) {
-        const lastOp = newOp._ops[newOp._ops.length - 1]
+        const lastOp = newOp._ops[newOp._ops.length - 1];
 
         if (!isRetain(lastOp)) {
-          throw new Error("Remove operation encountered but last operation was not retain");
+          throw new Error('Remove operation encountered but last operation was not retain');
         }
 
         // $FlowIgnore
