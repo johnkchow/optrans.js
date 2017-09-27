@@ -62,17 +62,8 @@ export class AwaitingAckState implements State {
   }
 
   applyServer(op: LineageOperation): State {
-    /* eslint-disable max-len */
-    /*
-     * We check to see if the operation matches the same reference ID of the one we sent to the server. We always assume the server will eventually return
-     *
-     * IF the ref ID matches,
-     *   THEN transform(bridge, serverOp), send bridge' to the server, apply serverOp' to doc, compose(bridge, serverOp'), return WaitingState;
-     * ELSE
-     *   THEN transform(bridge, serverOp), apply serverOp' to doc, compose(bridge, serverOp'), return this
-     */
-    /* eslint-enable max-len */
     const [clientPrime, serverPrime] = LineageOperation.transform(this.clientBuffer, op);
+
     this.doc.apply(serverPrime);
 
     if (op.sourceId === this.ackOp.sourceId) {
