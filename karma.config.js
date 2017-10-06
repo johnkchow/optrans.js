@@ -10,6 +10,7 @@ const files = [
 
 module.exports = (config) => {
   config.set({
+    logLevel: config.LOG_INFO,
     frameworks: ['mocha', 'chai'],
     files,
     reporters: ['progress'],
@@ -27,6 +28,11 @@ module.exports = (config) => {
     webpackMiddleware: {
       noInfo: true,
       stats: 'errors-only',
+    },
+    client: {
+      mocha: {
+        grep: config.grep,
+      },
     },
   });
 };

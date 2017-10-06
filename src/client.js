@@ -1,4 +1,4 @@
-// @flow
+/* @flow */
 import LineageOperation from './lineage_operation';
 import type { State } from './states';
 

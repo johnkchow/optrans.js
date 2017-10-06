@@ -21,6 +21,10 @@ export default class Operation {
   _ops: Array<PrimitiveOperation>;
 
   static transform(op1: Operation, op2: Operation): [Operation, Operation] {
+    const ops1 = op1._ops;
+    const ops2 = op2._ops;
+
+    Logger.debug(`transform ops args: [${ops1.toString()}], [${ops2.toString()}]`);
     return [Operation._transformOneWay(op1, op2, 2), Operation._transformOneWay(op2, op1, 1)];
   }
 
@@ -41,7 +45,12 @@ export default class Operation {
       Logger.debug(`transform (${i}, ${ops1[i]}), (${j}, ${ops2[j]}), [${newOp._ops.toString()}]`);
 
       if (isInsert(ops1[i]) && isInsert(ops2[j])) {
-        if (insertPriority === 1) {
+        if (ops1[i] === ops2[j]) {
+          // $FlowIgnore
+          newOp.retain(ops1[i].length);
+          i++;
+          j++;
+        } else if (insertPriority === 1) {
           // $FlowIgnore
           newOp.insert(ops1[i]);
           // $FlowIgnore
@@ -129,17 +138,14 @@ export default class Operation {
         const p2 = (ops2[j]: number);
 
         if (p1 === p2) {
-          newOp.remove(p1);
           i++;
           j++;
         } else if (Math.abs(p1) > Math.abs(p2)) {
-          newOp.remove(p2);
           ops1[i] = p1 - p2;
           j++;
         } else {
-          newOp.remove(p1);
           ops2[j] = p2 - p1;
-          j++;
+          i++;
         }
       } else if (isRemove(ops1[i])) {
         // $FlowIgnore
@@ -156,6 +162,7 @@ export default class Operation {
         newOp._ops[newOp._ops.length - 1] = lastOp + ops2[j];
         j++;
       } else {
+        Logger.error(`Unknown operation transform: [${ops1[i]},${ops2[j]}]`);
         throw new Error('Unknown operation transform');
       }
     }
@@ -193,7 +200,9 @@ export default class Operation {
     this._ops.push(op);
   }
 
+
   compose(op: Operation): Operation {
+    Logger.debug(`compose ops: [${this._ops.toString()}], [${op._ops.toString()}]`);
     const ops1 = this._ops.slice();
     const ops2 = op._ops.slice();
     const newOp = new Operation();
@@ -202,7 +211,7 @@ export default class Operation {
     let j = 0;
 
     while (i < ops1.length || j < ops2.length) {
-      Logger.debug(`(${i}, ${ops1[i]}), (${j}, ${ops2[j]}), [${newOp._ops.toString()}]`);
+      Logger.debug(`compose (${i}, ${ops1[i]}), (${j}, ${ops2[j]}), [${newOp._ops.toString()}]`);
 
       if (isRetain(ops1[i]) && isRetain(ops2[j])) {
         // $FlowIgnore
@@ -237,7 +246,11 @@ export default class Operation {
 
         if (p1 + p2 >= 0) {
           newOp.remove(p2);
-          ops1[i] = p1 + p2;
+          if (p1 + p2 === 0) {
+            i++;
+          } else {
+            ops1[i] = p1 + p2;
+          }
           j++;
         } else {
           newOp.remove(p1 + p2);
@@ -248,6 +261,14 @@ export default class Operation {
         // $FlowIgnore
         newOp.retain((ops1[i]: number));
         i++;
+      } else if (isRemove(ops1[i])) {
+        // $FlowIgnore
+        newOp.remove(ops1[i]);
+        i++;
+      } else if (isInsert(ops2[j])) {
+        // $FlowIgnore
+        newOp.insert(ops2[j]);
+        j++;
       } else if (isInsert(ops1[i]) && isRetain(ops2[j])) {
         // $FlowIgnore
         const p1 = (ops1[i]: string);
@@ -258,10 +279,10 @@ export default class Operation {
           newOp.insert(p1);
           i++;
 
-          if (p2 - p1.length) {
-            ops2[j] = p2 - p1.length;
-          } else {
+          if (p2 === p1.length) {
             j++;
+          } else {
+            ops2[j] = p2 - p1.length;
           }
         } else {
           newOp.insert(p1.substring(0, p2 - 1));
@@ -291,14 +312,6 @@ export default class Operation {
         // $FlowIgnore
         newOp.insert(ops1[i]);
         i++;
-      } else if (isRemove(ops1[i])) {
-        // $FlowIgnore
-        newOp.remove(ops1[i]);
-        i++;
-      } else if (isInsert(ops2[j])) {
-        // $FlowIgnore
-        newOp.insert(ops2[j]);
-        j++;
       } else if (isRetain(ops2[j])) {
         // $FlowIgnore
         newOp.retain(ops2[j]);
@@ -311,6 +324,8 @@ export default class Operation {
         throw new Error(`Unknown operation combinations: ${ops1[i]}, ${ops2[j]}`);
       }
     }
+
+    Logger.debug(`compose newOp: [${newOp._ops.toString()}]`);
 
     return newOp;
   }

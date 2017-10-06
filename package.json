@@ -5,9 +5,9 @@
     "dev:server": "webpack-dev-server --progress --colors",
     "build": "babel src/ -d lib/",
     "prepublish": "yarn run build",
-    "test": "karma start --single-run --browsers ChromeHeadless karma.config.js",
+    "test": "karma start --auto-watch --browsers ChromeHeadless karma.config.js",
     "test:chrome": "karma start --auto-watch --browsers Chrome karma.config.js",
-    "test:server": "karma start --auto-watch --browsers ChromeHeadless karma.config.js"
+    "test:server": "karma start --browsers ChromeHeadless karma.config.js"
   },
   "devDependencies": {
     "babel-cli": "^6.26.0",
