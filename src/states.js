@@ -100,8 +100,7 @@ export class AwaitingAckState implements State {
       );
     } else if (op.sourceId === this.ackOp.sourceId) {
 
-      const compressedClientPrime = LineageOperation.transformOneWay(clientPrime, this.serverBuffer);
-      this.opSender.send(compressedClientPrime);
+      this.opSender.send(clientPrime);
 
       return new AwaitingAckState(
         this.doc,

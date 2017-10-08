@@ -17,6 +17,37 @@ function isRemove(op: PrimitiveOperation): boolean {
   return typeof op === 'number' && op < 0;
 }
 
+
+type SinglePrimitiveOperation = { type: 'char', char: string } | { type: 'pos', pos: number };
+
+function flattenOps(ops: Array<PrimitiveOperation>): Array<SinglePrimitiveOperation> {
+  const results = [];
+
+  let counter = 0;
+
+  ops.forEach((op) => {
+    if (isInsert(op)) {
+      // $FlowIgnore
+      const str: string = op;
+      for (let i = 0; i < str.length; i++) {
+        results.push({ type: 'char', char: str[i] });
+      }
+
+      counter += str.length;
+    } else {
+      // $FlowIgnore
+      const count: number = Math.abs(op);
+
+      for (let i = 0; i < count; i++) {
+        results.push({ type: 'pos', pos: counter });
+        counter++;
+      }
+    }
+  });
+
+  return results;
+}
+
 export default class Operation {
   _ops: Array<PrimitiveOperation>;
 
@@ -26,6 +57,24 @@ export default class Operation {
 
     Logger.debug(`transform ops args: [${ops1.toString()}], [${ops2.toString()}]`);
     return [Operation._transformOneWay(op1, op2, 2), Operation._transformOneWay(op2, op1, 1)];
+  static _newTransform(op1: Operation, op2: Operation): [Operation, Operation] {
+    const ops1 = flattenOps(op1._ops);
+    const ops2 = flattenOps(op2._ops);
+
+    Logger.debug(`transform ops args: [${ops1.toString()}], [${ops2.toString()}]`);
+
+    const dp = Array(ops1.length + 1);
+
+    dp[0][0] = [{ distance: 0, ops: [] }];
+
+    for (let i = 1; i < ops1.length; i++) {
+      dp[i] = Array(ops2.length);
+    }
+
+    for (let i = 0; i < ops1.length; i++) {
+      for (let j = 0; j < ops2.length; j++) {
+      }
+    }
   }
 
   /*

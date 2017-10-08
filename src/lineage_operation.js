@@ -48,9 +48,9 @@ export default class LineageOperation {
   toString(): string {
     return JSON.stringify({
       id: this.id,
+      ops: this.op._ops,
       sourceId: this.sourceId,
       parentId: this.parentId,
-      ops: this.op._ops,
     });
   }
 }
