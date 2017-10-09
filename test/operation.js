@@ -201,7 +201,6 @@ describe('Operation', () => {
 
         const results = Operation.transform(op1, op2);
 
-        debugger
         expect(results[0]._ops).to.ordered.members([2, 'j']);
         expect(results[1]._ops).to.ordered.members(['b', 2]);
       });
@@ -214,7 +213,6 @@ describe('Operation', () => {
 
         const results = Operation.transform(op1, op2);
 
-        debugger
         expect(results[0]._ops).to.ordered.members([-1, 2, 'j']);
         expect(results[1]._ops).to.ordered.members(['b', 2]);
       });

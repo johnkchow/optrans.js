@@ -20,12 +20,6 @@ export default class LineageOperation {
     ];
   }
 
-  static transformOneWay(op1: LineageOperation, op2: LineageOperation): LineageOperation {
-    const op1Prime = Operation._transformOneWay(op1.op, op2.op, 2);
-
-    return new LineageOperation(generateId(), op1.id, op2.id, op1Prime);
-  }
-
   id: string;
   sourceId: ?string;
   parentId: ?string;

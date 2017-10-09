@@ -5,10 +5,6 @@ import type { Document, OpSender } from './client';
 
 function logOp(msg: string, op: LineageOperation) {
   Logger.debug(`${msg} - ${op.toString()}`);
-  // Logger.debug(`${msg} - op.id ${op.id}`);
-  // Logger.debug(`${msg} - op.sourceId ${op.sourceId || 'none'}`);
-  // Logger.debug(`${msg} - op.parentId ${op.parentId || 'none'}`);
-  // Logger.debug(`${msg} - op._ops [${op.op._ops.toString()}]`);
 }
 
 export interface State {
