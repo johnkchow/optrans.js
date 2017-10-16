@@ -88,15 +88,15 @@ describe('Operation', () => {
       });
     });
 
-    describe('when transforming [Retain(2),Insert(a),Remove(1)] with [Retain(1),Insert(b),Retain(2)]', () => {
-      it('should return [Retain(3),Insert(a),Retain(1),Remove(1)], [Retain(1),Insert(b),Retain(2)]', () => {
+    describe('when transforming [2,a,1,-1] with [1,b,2]', () => {
+      it('should return [3,a,1,-1], [1,b,2]', () => {
         const op1 = new Operation([2, 'a', 1, -1]);
         const op2 = new Operation([1, 'b', 2]);
 
         const results = Operation.transform(op1, op2);
 
         expect(results[0]._ops).to.ordered.members([3, 'a', 1, -1]);
-        expect(results[1]._ops).to.ordered.members([1, 'b', 2]);
+        expect(results[1]._ops).to.ordered.members([1, 'b', 3]);
       });
     });
 
@@ -189,6 +189,7 @@ describe('Operation', () => {
 
         const results = Operation.transform(op1, op2);
 
+        debugger
         expect(results[0]._ops).to.ordered.members([-1, 1, 'j']);
         expect(results[1]._ops).to.ordered.members([2]);
       });

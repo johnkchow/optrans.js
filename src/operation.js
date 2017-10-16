@@ -5,23 +5,23 @@ import Logger from './logger';
 
 type PrimitiveOperation = number | string;
 
-function isRetain(op: PrimitiveOperation): boolean {
+function isRetain(op: ?PrimitiveOperation): boolean {
   return typeof op === 'number' && op >= 0;
 }
 
-function isInsert(op: PrimitiveOperation): boolean {
+function isInsert(op: ?PrimitiveOperation): boolean {
   return typeof op === 'string';
 }
 
-function isRemove(op: PrimitiveOperation): boolean {
+function isRemove(op: ?PrimitiveOperation): boolean {
   return typeof op === 'number' && op < 0;
 }
 
 
-type CondensedOperation = { type: 'char', char: string } | { type: 'ret', pos: number };
+type CondensedOperation = { type: 'char', char: string, pos: number } | { type: 'rem' | 'ret', pos: number };
 type CondensedOperations = Array<CondensedOperation>;
 
-function processOps(ops: Array<PrimitiveOperation>): [CondensedOperations, number] {
+function processOps(ops: Array<PrimitiveOperation>): CondensedOperations {
   const results = [];
 
   let counter = 0;
@@ -31,24 +31,22 @@ function processOps(ops: Array<PrimitiveOperation>): [CondensedOperations, numbe
       // $FlowIgnore
       const str: string = op;
       for (let i = 0; i < str.length; i++) {
-        results.push({ type: 'char', char: str[i] });
+        results.push({ type: 'char', char: str[i], pos: counter});
       }
 
-    } else if (isRemove(op)) {
-      // $FlowIgnore
-      counter += Math.abs(op);
     } else {
       // $FlowIgnore
       const count: number = Math.abs(op);
+      const type = isRetain(op) ? 'ret' : 'rem';
 
       for (let i = 0; i < count; i++) {
-        results.push({ type: 'ret', pos: counter });
+        results.push({ type: type, pos: counter });
         counter++;
       }
     }
   });
 
-  return [results, counter];
+  return results;
 }
 
 function removeNonOverlapingRetains(ops1: CondensedOperations, ops2: CondensedOperations): [CondensedOperations, CondensedOperations] {
@@ -60,17 +58,16 @@ function removeNonOverlapingRetains(ops1: CondensedOperations, ops2: CondensedOp
 
   while (i < ops1.length && j < ops2.length) {
     if (ops1[i].type === 'ret' && ops2[j].type === 'ret') {
-      if (ops1[i].pos === ops2[j].pos) {
-        newOps1.push(ops1[i]);
-        i++;
+      newOps1.push(ops1[i]);
+      newOps2.push(ops2[j]);
 
-        newOps2.push(ops2[j]);
-        j++;
-      } else if (ops1[i].pos > ops2[j].pos) {
-        j++;
-      } else {
-        i++;
-      }
+      i++;
+      j++;
+    } else if ((ops1[i].type === 'ret' && ops2[j].type === 'rem') ||
+      (ops1[i].type === 'rem' && ops2[j].type === 'ret') ||
+      (ops1[i].type === 'rem' && ops2[j].type === 'rem')) {
+      i++;
+      j++;
     } else if (ops1[i].type === 'char') {
       newOps1.push(ops1[i]);
       i++;
@@ -113,13 +110,13 @@ export default class Operation {
     const ops2 = op2._ops;
 
     Logger.debug(`transform ops args: [${ops1.toString()}], [${ops2.toString()}]`);
-    return [Operation._newTransformOneWay(op1, op2), Operation._newTransformOneWay(op2, op1)];
+    return [Operation._transformOneWay(op1, op2, 2), Operation._transformOneWay(op2, op1, 1)];
   }
 
   /*
    * Returns compared' which will then could be applied to base
    */
-  static _newTransformOneWay(compared: Operation, base: Operation): Operation {
+  static _transformOneWay(compared: Operation, base: Operation, insertPriority: 1 | 2): Operation {
     function deepCopyOp(op) {
       return {
         distance: op.distance,
@@ -137,15 +134,23 @@ export default class Operation {
       return false;
     }
 
-    let [comparedOps, retRemCount] = processOps(compared._ops);
-    let [baseOps, _] = processOps(base._ops);
+    // First, include all the removes in processOps
+    // Then strip out retains from each other where there are already removes; also strip out removes
+    // Then continue DP like we normally do
+    // Then in expand, we take in the the original processedOps, optimalOps
+    let comparedOpsWithPos = processOps(compared._ops);
+    let baseOpsWithPos = processOps(base._ops);
 
-    [comparedOps, baseOps] = removeNonOverlapingRetains(comparedOps, baseOps);
+    const [comparedOps, baseOps] = removeNonOverlapingRetains(comparedOpsWithPos, baseOpsWithPos);
+
+    const retRemCount = baseOpsWithPos.filter(op => op.type === 'ret' || op.type === 'rem').length
 
     const dp : DPArray = Array(comparedOps.length + 1);
 
     dp[0] = new Array(baseOps.length + 1);
     dp[0][0] = { distance: 0, ops: [] };
+
+    let counter = 0;
 
     for (let i = 1; i < comparedOps.length + 1; i++) {
       dp[i] = Array(baseOps.length + 1);
@@ -154,10 +159,24 @@ export default class Operation {
 
       const comparedOp = comparedOps[i - 1];
 
+      const pos = comparedOp.pos;
+
+      for (; counter < pos; counter++) {
+        ops.push(-1);
+      }
+
+      counter = pos;
+
       if (comparedOp.type === 'char') {
         ops.push(comparedOp.char);
       } else {
         ops.push(-1);
+      }
+
+      if (i === comparedOps.length) {
+        for (; counter < retRemCount; counter++) {
+          ops.push(-1);
+        }
       }
 
       dp[i][0] = { distance: i, ops };
@@ -165,10 +184,20 @@ export default class Operation {
       logDpOp(i, 0, 'init', dp[i][0]);
     }
 
+    counter = 0;
+
     for (let j = 1; j < baseOps.length + 1; j++) {
       const ops = dp[0][j - 1].ops.slice();
 
       const baseOp = baseOps[j - 1];
+
+      const pos = baseOp.pos;
+
+      for (; counter < pos; counter++) {
+        ops.push(-1);
+      }
+
+      counter = pos;
 
       if (baseOp.type === 'char') {
         ops.push(1);
@@ -176,8 +205,13 @@ export default class Operation {
         ops.push(-1);
       }
 
-      dp[0][j] = { distance: j, ops };
+      if (j === baseOps.length) {
+        for (; counter < retRemCount; counter++) {
+          ops.push(-1);
+        }
+      }
 
+      dp[0][j] = { distance: j, ops };
       logDpOp(0, j, 'init', dp[0][j]);
     }
 
@@ -195,54 +229,169 @@ export default class Operation {
       for (let bj = 1; bj < baseOps.length + 1; bj++) {
         const baseOp = baseOps[bj - 1];
         const comparedOp = comparedOps[ci - 1];
+        const lastBaseOp: ?CondensedOperation = baseOps[bj - 2];
+        const lastComparedOp: ?CondensedOperation = comparedOps[ci - 2];
+
+        let counter = 0;
 
         // ins - When inserting char baseOps[j] to a str that equals to
         // baseOps[0..j-1] and comparedOps[i] has already factored in from
         // previous calculation
         const ins = deepCopyOp(dp[ci][bj - 1]);
         ins.distance++;
+
+        if (bj - 2 < 0) {
+          counter = 0;
+        } else {
+          counter = baseOps[bj - 2].pos;
+        }
+
+        while (counter < baseOp.pos) {
+          ins.ops.push(-1);
+          counter++;
+        }
+
         ins.ops.push(1);
 
+        if (bj === baseOps.length) {
+          while (counter < retRemCount) {
+            ins.ops.push(-1);
+            counter++;
+          }
+        }
 
         // rem - When removing char comparedOps[i] to a previously calculated
         // str that already equals to baseOps[0..j]
         const rem = deepCopyOp(dp[ci - 1][bj]);
         rem.distance++;
-        let index = 0;
-        for (let counter = 0; index < rem.ops.length; index++) {
-          if (isInsert(rem.ops[index]) || isRemove(rem.ops[index])) {
-            counter++;
-          }
 
-          if (counter === (ci - 1)) {
-            break;
-          }
-        }
-
-        if (comparedOp.type === 'char') {
-          rem.ops.splice(index + 1, 0, comparedOp.char);
+        if (ci - 2 < 0) {
+          counter = 0;
         } else {
-          rem.ops.splice(index + 1, 0, -1);
+          counter = comparedOps[ci - 2].pos;
         }
 
-        // sub - When doing a substitute (or retaining) between comaparedOps[i]
+        while (counter < comparedOp.pos) {
+          ins.ops.push(-1);
+          counter++;
+        }
+
+        // TODO: we must insert in order...
+        if (comparedOp.type === 'char') {
+          rem.ops.push(comparedOp.char);
+        } else {
+          rem.distance = Infinity;
+          rem.ops.push(-1);
+        }
+
+        // sub - When doing a substitute (or retaining) between comparedOps[i]
         // and baseOps[j] on a str that equals to baseOps[0..j-1] but hasn't
         // factored in comparedOps[i] yet
         const sub = deepCopyOp(dp[ci - 1][bj - 1]);
+        let firstOp;
+        let secondOp;
+        function sortByPos(op1: CondensedOperation, op2: CondensedOperation): [CondensedOperation, CondensedOperation] {
+          if (op1.pos < op2.pos) {
+            return [op1, op2];
+          } else {
+            return [op2, op1];
+          }
+        }
+
+        if (baseOp.type === 'ins' && comparedOp.type === 'ins') {
+          if (baseOp.pos === comparedOp.pos) {
+            if (insertPriority === 2) {
+              firstOp = baseOp;
+              secondOp = comparedOp;
+            } else {
+              firstOp = comparedOp;
+              secondOp = baseOp;
+            }
+          } else {
+            [firstOp, secondOp] = sortByPos(comparedOp, baseOp);
+          }
+        } else if (baseOp.type === 'ins' || comparedOp.type === 'ins') {
+          const insOp = baseOp.type === 'ins' ? baseOp : comparedOp;
+          const retOp = baseOp.type === 'ins' ? comparedOp : baseOp;
+
+          if (insOp.pos === retOp.pos) {
+            firstOp = insOp;
+            secondOp = retOp;
+          } else {
+            [firstOp, secondOp] = sortByPos(insOp, retOp);
+          }
+        } else {
+          [firstOp, secondOp] = sortByPos(comparedOp, baseOp);
+        }
+
 
         if (isEqual(comparedOp, baseOp)) {
           sub.ops.push(1);
         } else {
-          sub.ops.push(1);
+          sub.distance += 2;
 
-          if (comparedOp.type === 'char') {
-            sub.ops.push(comparedOp.char);
+          // first, check to see if they're both inserts.
+          // if so, then if their insert pos is the same, then apply the insert priority rule
+          //        else if their insert pos is diff, then insert whichever pos came first
+          //
+          // else if they're both retains (but implicitly they're diff pos) then just push(1) twice
+          //
+          // else if one's an insert and one's a retain
+          //  then if the pos is the same, then insert first and retain last
+          //  else do the insert/retain in order of pos
+          //
+          // regardless of choices above, we first must push removes up til both ops
+
+
+          let firstPos;
+          let secondPos;
+
+          if (lastBaseOp && lastComparedOp) {
+            if (lastBaseOp.pos < lastComparedOp.pos) {
+              firstPos = lastBaseOp.pos;
+              secondPos = lastComparedOp.pos;
+            } else {
+              firstPos = lastComparedOp.pos;
+              secondPos = lastBaseOp.pos;
+            }
+          } else if (lastBaseOp) {
+            firstPos = 0;
+            secondPos = lastBaseOp.pos;
+          } else if (lastComparedOp) {
+            firstPos = 0;
+            secondPos = lastComparedOp.pos;
+          } else {
+            firstPos = 0;
+            secondPos = 0;
+          }
+
+          for (let i = firstPos; i < firstOp.pos; i++) {
+            sub.ops.push(-1);
+          }
+
+          if (firstOp.type === 'char') {
+            sub.ops.push(firstOp.char);
           } else {
             sub.ops.push(1);
           }
 
-          sub.distance += 2;
+          for (let i = secondPos; i < secondOp.pos; i++) {
+            sub.ops.push(-1);
+          }
+
+          if (secondOp.type === 'char') {
+            sub.ops.push(secondOp.char);
+          } else {
+            sub.ops.push(1);
+          }
         }
+
+        if (bj === baseOps.length) {
+          for (let i = secondOp.type === 'ins' ? secondOp.pos : secondOp.pos + 1; i < retRemCount; i++) {
+            sub.ops.push(-1);
+          }
+        }
+
 
         const sortedOps = [ins, rem, sub].sort((x, y) => x.distance - y.distance);
 
@@ -295,24 +444,118 @@ export default class Operation {
       return compressedOps;
     }
 
-    function expandOps(baseOps: CondensedOperations, optimalOps: Array<PrimitiveOperation>, retRemCount: number): Array<PrimitiveOperation>{
+    function expandOps(comparedOps: CondensedOperations, baseOps: CondensedOperations, optimalOps: Array<PrimitiveOperation>): Array<PrimitiveOperation> {
       const results = [];
-      let i = 0;
-      let j = 0;
 
-      while (i < baseOps.length && j < optimalOps.length) {
-        if (isInsert(optimalOps[j])) {
+      let b = 0;
+      let c = 0;
+      let o = 0;
+
+      debugger
+
+      while (c < comparedOps.length || b < baseOps.length) {
+        const bop : ?CondensedOperation = baseOps[b];
+        const cop : ?CondensedOperation = comparedOps[c];
+        const oo : ?PrimitiveOperation = optimalOps[o];
+
+        if (bop) {
+          if (cop) {
+            if (bop.type === 'rem' && cop.type === 'rem') {
+              b++;
+              c++;
+            } else if (bop.type === 'ret' && cop.type === 'rem') {
+              results.push(-1);
+              b++;
+              c++;
+            } else if (isRetain(oo) &&
+              ((bop.type === 'ret' && cop.type === 'ret') ||
+               (bop.type === 'ins' && cop.type === 'ins'))) {
+              results.push(1);
+              b++;
+              c++;
+              o++;
+            } else if (oo && isInsert(oo) && cop.type === 'ins') {
+              // $FlowIgnore
+              results.push(oo);
+              c++;
+              o++;
+            } else if (isRemove(oo) && bop.type === 'ret' && cop.type === 'ret') {
+              results.push(-1);
+              b++;
+              c++;
+              o++;
+            } else if (isRemove(oo) && bop.type === 'ins') {
+              results.push(-1);
+              b++;
+              o++;
+            }
+          } else if (bop.type === 'rem') {
+            results.push(-1);
+            b++;
+          } else if (isRetain(oo)) {
+            results.push(1);
+            b++;
+            o++;
+          } else {
+            throw new Error('Assertion error: there\'s an unknown set of operations');
+          }
+        } else if (cop) {
+        }
+
+        if (bop && cop && bop.type === 'rem' && cop.type === 'rem') {
+          b++;
+          c++;
+        } else if (bop && cop && bop.type === 'rem' && cop.type === 'ret') {
+          b++;
+          c++;
+        } else if (bop && cop && bop.type === 'ret' && cop.type === 'rem') {
+          results.push(-1);
+          b++;
+          c++;
+        } else if (oo && isInsert(oo)) {
+          if (!cop || cop.type !== 'char') {
+            throw new Error('Assertion error: expected cop to be insert as well');
+          }
+          results.push(oo);
+          o++;
+          c++;
+        } else if (isRemove(oo)) {
+          if (!bop || bop.type !== 'rem') {
+            throw new Error('Assertion error: expected bop to be remove as well');
+          }
+          results.push(-1);
+          o++;
+          b++;
+          c++;
+        } else if (bop && bop.type === 'char') {
+          if (!isRetain(oo)) {
+            throw new Error('Assertion error: expected oo to be retain as well');
+          }
+          results.push(1);
+          o++;
+          b++;
+        } else {
+          results.push(1);
+          o++;
+          b++;
+          c++;
         }
       }
 
-      // assert that both i and j have reached end of their respective arrays;
-      // otherwise it indicates we have a logic error above.
+      while (o < optimalOps.length) {
+        if (isInsert(optimalOps[o])) {
+          results.push(optimalOps[o]);
+        } else {
+          debugger
+          throw new Error('Assertion error: ops cannot contain anymore retains/removes');
+        }
+        o++;
+      }
 
       return compressOps(results);
     }
 
-    optimalOps = expandOps(baseOps, optimalOps, retRemCount);
-
+    optimalOps = compressOps(optimalOps);
 
     return new Operation(optimalOps);
   }
