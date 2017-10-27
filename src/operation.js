@@ -5,50 +5,47 @@ import Logger from './logger';
 
 type PrimitiveOperation = number | string;
 
-function isRetain(op: PrimitiveOperation): boolean {
+function isRetain(op: ?PrimitiveOperation): boolean {
   return typeof op === 'number' && op >= 0;
 }
 
-function isInsert(op: PrimitiveOperation): boolean {
+function isInsert(op: ?PrimitiveOperation): boolean {
   return typeof op === 'string';
 }
 
-function isRemove(op: PrimitiveOperation): boolean {
+function isRemove(op: ?PrimitiveOperation): boolean {
   return typeof op === 'number' && op < 0;
 }
 
 
-type CondensedOperation = { type: 'char', char: string } | { type: 'ret', pos: number };
+type CondensedOperation = { type: 'char', char: string, pos: number, sourcePos: number, source: 'base' | 'compared' } | { type: 'ret' | 'rem', pos: number, sourcePos: number, source: 'base' | 'compared' };
 type CondensedOperations = Array<CondensedOperation>;
 
-function processOps(ops: Array<PrimitiveOperation>): [CondensedOperations, number] {
+function processOps(ops: Array<PrimitiveOperation>, source: 'base' | 'compared' ): CondensedOperations {
   const results = [];
 
   let counter = 0;
 
-  ops.forEach((op) => {
+  ops.forEach((op, i) => {
     if (isInsert(op)) {
       // $FlowIgnore
       const str: string = op;
       for (let i = 0; i < str.length; i++) {
-        results.push({ type: 'char', char: str[i] });
+        results.push({ type: 'char', char: str[i], pos: counter, sourcePos: i, source });
       }
-
-    } else if (isRemove(op)) {
-      // $FlowIgnore
-      counter += Math.abs(op);
     } else {
       // $FlowIgnore
       const count: number = Math.abs(op);
+      const type = isRetain(op) ? 'ret' : 'rem';
 
       for (let i = 0; i < count; i++) {
-        results.push({ type: 'ret', pos: counter });
+        results.push({ type: type, pos: counter, sourcePos: i, source });
         counter++;
       }
     }
   });
 
-  return [results, counter];
+  return results;
 }
 
 function removeNonOverlapingRetains(ops1: CondensedOperations, ops2: CondensedOperations): [CondensedOperations, CondensedOperations] {
@@ -60,17 +57,16 @@ function removeNonOverlapingRetains(ops1: CondensedOperations, ops2: CondensedOp
 
   while (i < ops1.length && j < ops2.length) {
     if (ops1[i].type === 'ret' && ops2[j].type === 'ret') {
-      if (ops1[i].pos === ops2[j].pos) {
-        newOps1.push(ops1[i]);
-        i++;
+      newOps1.push(ops1[i]);
+      newOps2.push(ops2[j]);
 
-        newOps2.push(ops2[j]);
-        j++;
-      } else if (ops1[i].pos > ops2[j].pos) {
-        j++;
-      } else {
-        i++;
-      }
+      i++;
+      j++;
+    } else if ((ops1[i].type === 'ret' && ops2[j].type === 'rem') ||
+      (ops1[i].type === 'rem' && ops2[j].type === 'ret') ||
+      (ops1[i].type === 'rem' && ops2[j].type === 'rem')) {
+      i++;
+      j++;
     } else if (ops1[i].type === 'char') {
       newOps1.push(ops1[i]);
       i++;
@@ -103,7 +99,7 @@ function removeNonOverlapingRetains(ops1: CondensedOperations, ops2: CondensedOp
 // calculate set of ops from the sparse ops set to produce minimal edit distance
 // then "expand" the condensed set by re-including removes
 
-type DPArray = Array<Array<{ distance: number, ops: Array<PrimitiveOperation> }>>;
+type DPArray = Array<Array<{ distance: number, ops: Array<CondensedOperation> }>>;
 
 export default class Operation {
   _ops: Array<PrimitiveOperation>;
@@ -113,13 +109,13 @@ export default class Operation {
     const ops2 = op2._ops;
 
     Logger.debug(`transform ops args: [${ops1.toString()}], [${ops2.toString()}]`);
-    return [Operation._newTransformOneWay(op1, op2), Operation._newTransformOneWay(op2, op1)];
+    return [Operation._transformOneWay(op1, op2, 2), Operation._transformOneWay(op2, op1, 1)];
   }
 
   /*
    * Returns compared' which will then could be applied to base
    */
-  static _newTransformOneWay(compared: Operation, base: Operation): Operation {
+  static _transformOneWay(compared: Operation, base: Operation, insertPriority: 1 | 2): Operation {
     function deepCopyOp(op) {
       return {
         distance: op.distance,
@@ -129,7 +125,7 @@ export default class Operation {
 
     function isEqual(op1: CondensedOperation, op2: CondensedOperation): boolean {
       if (op1.type === 'char' && op2.type === 'char') {
-        return op1.char === op2.char;
+        return op1.char === op2.char && op1.pos === op2.pos;
       } else if (op1.type === 'ret' && op2.type === 'ret') {
         return op1.pos === op2.pos;
       }
@@ -137,10 +133,16 @@ export default class Operation {
       return false;
     }
 
-    let [comparedOps, retRemCount] = processOps(compared._ops);
-    let [baseOps, _] = processOps(base._ops);
+    // First, include all the removes in processOps
+    // Then strip out retains from each other where there are already removes; also strip out removes
+    // Then continue DP like we normally do
+    // Then in expand, we take in the the original processedOps, optimalOps
+    let comparedOpsWithPos = processOps(compared._ops, 'compared');
+    let baseOpsWithPos = processOps(base._ops, 'base');
 
-    [comparedOps, baseOps] = removeNonOverlapingRetains(comparedOps, baseOps);
+    const [comparedOps, baseOps] = removeNonOverlapingRetains(comparedOpsWithPos, baseOpsWithPos);
+
+    const retRemCount = baseOpsWithPos.filter(op => op.type === 'ret' || op.type === 'rem').length
 
     const dp : DPArray = Array(comparedOps.length + 1);
 
@@ -154,15 +156,11 @@ export default class Operation {
 
       const comparedOp = comparedOps[i - 1];
 
-      if (comparedOp.type === 'char') {
-        ops.push(comparedOp.char);
-      } else {
-        ops.push(-1);
-      }
+      ops.push(comparedOp);
 
       dp[i][0] = { distance: i, ops };
 
-      logDpOp(i, 0, 'init', dp[i][0]);
+      logDpOpOp(i, 0, 'init', dp[i][0]);
     }
 
     for (let j = 1; j < baseOps.length + 1; j++) {
@@ -170,15 +168,11 @@ export default class Operation {
 
       const baseOp = baseOps[j - 1];
 
-      if (baseOp.type === 'char') {
-        ops.push(1);
-      } else {
-        ops.push(-1);
-      }
+      ops.push(baseOp);
 
       dp[0][j] = { distance: j, ops };
 
-      logDpOp(0, j, 'init', dp[0][j]);
+      logDpOpOp(0, j, 'init', dp[0][j]);
     }
 
     function logDpOp(i, j, msg, op) {
@@ -188,41 +182,120 @@ export default class Operation {
         newOp.distance = 'INF';
       }
 
-      Logger.debug(`[${i},${j}] ${msg}: ${JSON.stringify(newOp)}`);
+      const opPrim = op.type === 'char' ? `'${op.char}'` : '1';
+      const opStr = `${op.source[0]}:${op.pos}:${opPrim}`
+
+      Logger.debug(`[${i},${j}] ${msg}: ${opStr}`);
     }
 
+    function logDpOpOp(i, j, msg, op: { distance: number, ops: CondensedOperations }) {
+      const newOp = Object.assign({}, op);
+
+      if (op.distance === Infinity) {
+        newOp.distance = 'INF';
+      }
+
+      newOp.ops = op.ops.map((o) => {
+        const opStr = o.type === 'char' ? `'${o.char}'` : '1';
+        return `${o.source[0]}:${o.pos}:${opStr}`
+      });
+
+      Logger.debug(`[${i},${j}] ${msg}: dis:${newOp.distance}, ops: [${newOp.ops.join(' ')}]`);
+    }
+
+    // if (baseOp.type === 'char') {
+      // find the first ins.pos where ins.pos === baseOp.pos
+      // if found, if the insertPriority is 2 then find the last ins where ins.source === 'base'
+      // OR
+      // find the first ret.pos where ret.pos <= baseOp.pos
+      // if found, then insert before ret
+      // if not found (meaning you reached the end), just add it to the end
+    // } else {
+      // find the first ret.pos where ret.pos === baseOp.pos
+      // if found, then this is a no-op, and distance should not be incremented
+      // otherwise,
+      // find the first op where op.pos > baseOp.pos
+      // if found, insert right before here 
+      // else, just add to the end
+      // either case, incr distance by 1
+      //
+    // }
     for (let ci = 1; ci < comparedOps.length + 1; ci++) {
       for (let bj = 1; bj < baseOps.length + 1; bj++) {
         const baseOp = baseOps[bj - 1];
         const comparedOp = comparedOps[ci - 1];
 
+        // TODO: optimize this N lookup. otherwise, our algorithm will run O(max(n*m^2, n^2*m))
+        function insertOp(ops: Array<CondensedOperation>, newOp: CondensedOperation, insertPriority: 'base' | 'compared'): [Array<CondensedOperation>, boolean] {
+          let i = 0;
+          let found = false;
+          const otherSource = newOp.source === 'base' ? 'compared' : 'base';
+
+          for (; i < ops.length; i++) {
+            const curOp = ops[i];
+            if (newOp.type === 'char') {
+              if (curOp.pos === newOp.pos && curOp.type === 'char') {
+                let insIdx;
+
+                for (; i < ops.length; i++) {
+                  const jOp = ops[i];
+
+                  if (newOp.source === insertPriority) {
+                    if (jOp.type === 'char' && jOp.source === otherSource && jOp.pos === newOp.pos) {
+                      break;
+                    } else if (jOp.type !== 'char' || jOp.pos !== newOp.pos) {
+                      break;
+                    }
+                  } else {
+                    if (jOp.type !== 'char' && jOp.pos !== newOp.pos) {
+                      break;
+                    }
+                  }
+                }
+
+                break;
+              } else if (newOp.pos <= curOp.pos) {
+                break;
+              }
+            } else if (isEqual(curOp, newOp)) {
+              found = true;
+              break;
+            } else if (curOp.pos === newOp.pos && curOp.type === 'ins') {
+              // do nothing
+            } else if (newOp.pos < curOp.pos) {
+              break;
+            }
+          }
+
+          if (!found) {
+            ops.splice(i, 0, newOp);
+          }
+          return [ops, found];
+        }
+
         // ins - When inserting char baseOps[j] to a str that equals to
         // baseOps[0..j-1] and comparedOps[i] has already factored in from
         // previous calculation
         const ins = deepCopyOp(dp[ci][bj - 1]);
-        ins.distance++;
-        ins.ops.push(1);
+        const [ insOps, insFound ] = insertOp(ins.ops, baseOp, insertPriority === 2 ? 'base' : 'compared');
 
+        if (!insFound) {
+          ins.distance++;
+          ins.ops = insOps;
+        }
+
+        if (ci === 4 && bj === 3) {
+          debugger;
+        }
 
         // rem - When removing char comparedOps[i] to a previously calculated
         // str that already equals to baseOps[0..j]
         const rem = deepCopyOp(dp[ci - 1][bj]);
-        rem.distance++;
-        let index = 0;
-        for (let counter = 0; index < rem.ops.length; index++) {
-          if (isInsert(rem.ops[index]) || isRemove(rem.ops[index])) {
-            counter++;
-          }
+        const [ remOps, remFound ] = insertOp(rem.ops, comparedOp, insertPriority === 2 ? 'base' : 'compared');
 
-          if (counter === (ci - 1)) {
-            break;
-          }
-        }
-
-        if (comparedOp.type === 'char') {
-          rem.ops.splice(index + 1, 0, comparedOp.char);
-        } else {
-          rem.ops.splice(index + 1, 0, -1);
+        if (!remFound) {
+          rem.distance++;
+          rem.ops = remOps;
         }
 
         // sub - When doing a substitute (or retaining) between comaparedOps[i]
@@ -231,17 +304,24 @@ export default class Operation {
         const sub = deepCopyOp(dp[ci - 1][bj - 1]);
 
         if (isEqual(comparedOp, baseOp)) {
-          sub.ops.push(1);
+          const [ subOps, subFound ] = insertOp(sub.ops, baseOp, insertPriority === 2 ? 'base' : 'compared');
+          sub.ops = subOps;
+          if (!subFound) {
+            sub.distance++;
+          }
         } else {
-          sub.ops.push(1);
+          const baseResults = insertOp(sub.ops, baseOp, insertPriority === 2 ? 'base' : 'compared');
+          const comparedResults = insertOp(baseResults[0], comparedOp, insertPriority === 2 ? 'base' : 'compared');
 
-          if (comparedOp.type === 'char') {
-            sub.ops.push(comparedOp.char);
-          } else {
-            sub.ops.push(1);
+          if (!baseResults[1]) {
+            sub.distance++;
           }
 
-          sub.distance += 2;
+          if (!comparedResults[1]) {
+            sub.distance++;
+          }
+
+          sub.ops = comparedResults[0];
         }
 
         const sortedOps = [ins, rem, sub].sort((x, y) => x.distance - y.distance);
@@ -252,10 +332,19 @@ export default class Operation {
           dp[ci][bj] = sortedOps[0];
         }
 
-        logDpOp(ci, bj, 'ins', ins);
-        logDpOp(ci, bj, 'rem', rem);
-        logDpOp(ci, bj, 'sub', sub);
-        logDpOp(ci, bj, 'min', dp[ci][bj]);
+        if (dp[ci][bj].distance === 0) {
+          //debugger;
+        }
+
+        logDpOp(ci, bj, 'baseOp', baseOp);
+        logDpOp(ci, bj, 'comparedOp', comparedOp);
+        logDpOpOp(ci, bj - 1, 'previns', dp[ci][bj - 1]);
+        logDpOpOp(ci, bj, 'ins    ', ins);
+        logDpOpOp(ci - 1, bj, 'prevrem', dp[ci - 1][bj]);
+        logDpOpOp(ci, bj, 'rem    ', rem);
+        logDpOpOp(ci - 1, bj - 1, 'prevsub', dp[ci - 1][bj - 1]);
+        logDpOpOp(ci, bj, 'sub    ', sub);
+        logDpOpOp(ci, bj, 'min    ', dp[ci][bj]);
 
         Logger.debug('');
       }
@@ -263,58 +352,149 @@ export default class Operation {
 
     let optimalOps = dp[comparedOps.length][baseOps.length].ops;
 
-    function compressOps(ops) {
+    function newExpandOps(ops: CondensedOperations, allBaseOps: CondensedOperations, retRemCount: number): Array<PrimitiveOperation> {
       const compressedOps = [];
       let count = 0;
 
       ops.forEach((op) => {
-        if (isInsert(op)) {
-          if (count !== 0) {
-            compressedOps.push(count);
-          }
-          count = 0;
-
-          compressedOps.push(op);
-        } else  {
-          if ((isRetain(op) && (count === 0 || isRetain(count))) || (isRemove(op) && (count === 0 || isRemove(count)))) {
-            count += op;
-          } else {
-            if (count !== 0) {
-              compressedOps.push(count);
+        // if count = 0, type == 'char', op.pos == 0; do nothing
+        // if count = 0, type == 'ret, op.pos == 0, do nothing
+        // if count = 0, type = char, op.pos = 1, remCount: 1
+        // if count = 0, type = ret, op.pos = 1, remCount: 1,
+        //
+        // if count = 0, type = char, op.pos = 2, remCount: 2
+        // if count = 0, type = ret, op.pos = 2, remCount: 2
+        if (count === op.pos && op.type === 'ret') {
+          count += 1;
+        } else if (count === op.pos && op.type === 'char') {
+          // do nothing
+        } else if (count < op.pos)  {
+          let remCount = 0;
+          // TODO: avoid the N lookup here
+          for (let i = count; i < op.pos; i++) {
+            if (!allBaseOps.find(o => o.type === 'rem' && o.pos === i)) {
+              remCount++;
             }
-            count = op;
           }
+          if (remCount) {
+            compressedOps.push(-remCount);
+          }
+          count = op.pos + 1;
+        }
+
+        if ((op.type === 'char' && op.source === 'base') || op.type === 'ret') {
+          if (isRetain(compressedOps[compressedOps.length - 1])) {
+            // $FlowIgnore
+            const ret = (compressedOps[compressedOps.length - 1] : number);
+
+            compressedOps[compressedOps.length - 1] = ret + 1;
+          } else {
+            compressedOps.push(1);
+          }
+        } else if (op.type === 'char' && op.source === 'compared')  {
+          compressedOps.push(op.char);
         }
       });
 
 
-      if (count !== 0) {
-        compressedOps.push(count);
+      let lastOp = ops[ops.length - 1];
+      let lastPos = lastOp.type === 'char' ? lastOp.pos - 1 : lastOp.pos;
+
+      if (lastPos < retRemCount - 1) {
+        let remCount = 0;
+        // TODO: avoid the N lookup here
+        for (let i = lastPos + 1; i < retRemCount; i++) {
+          if (!allBaseOps.find(o => o.type === 'rem' && o.pos === i)) {
+            remCount++;
+          }
+        }
+        if (remCount) {
+          compressedOps.push(-remCount);
+        }
       }
+
+      // if baseOps has rem and we're missing an op, then we don't need to apply the rem
+      // if comparedOps has rem and we're missing an op, then we should apply the rem
 
       return compressedOps;
     }
 
-    function expandOps(baseOps: CondensedOperations, optimalOps: Array<PrimitiveOperation>, retRemCount: number): Array<PrimitiveOperation>{
-      const results = [];
-      let i = 0;
-      let j = 0;
+    //function expandOps(comparedOps: CondensedOperations, baseOps: CondensedOperations, optimalOps: Array<PrimitiveOperation>): Array<PrimitiveOperation> {
+      //const results: Array<PrimitiveOperation> = [];
 
-      while (i < baseOps.length && j < optimalOps.length) {
-        if (isInsert(optimalOps[j])) {
-        }
-      }
+      //let b = 0;
+      //let c = 0;
+      //let o = 0;
 
-      // assert that both i and j have reached end of their respective arrays;
-      // otherwise it indicates we have a logic error above.
+      //while (c < comparedOps.length || b < baseOps.length) {
+        //const bop : ?CondensedOperation = baseOps[b];
+        //const cop : ?CondensedOperation = comparedOps[c];
+        //const oo : PrimitiveOperation = optimalOps[o];
 
-      return compressOps(results);
-    }
+        //if (bop && cop) {
+          //if (bop.type === 'rem' && cop.type === 'rem') {
+            //b++;
+            //c++;
+          //} else if (bop.type === 'ret' && cop.type === 'rem') {
+            //results.push(-1);
+            //b++;
+            //c++;
+          //} else if (isRetain(oo) &&
+            //((bop.type === 'ret' && cop.type === 'ret') ||
+             //(bop.type === 'char' && cop.type === 'char' && bop.char === cop.char))) {
+            //results.push(1);
+            //b++;
+            //c++;
+            //o++;
+          //} else if (isRetain(oo) && bop.type === 'char') {
+            //results.push(1);
+            //b++;
+            //o++;
+          //} else if (isInsert(oo) && cop.type === 'char') {
+            //results.push(oo);
+            //c++;
+            //o++;
+          //} else if (isRemove(oo) && bop.type === 'ret' && cop.type === 'ret') {
+            //results.push(-1);
+            //b++;
+            //c++;
+            //o++;
+          //} else if (isRemove(oo) && bop.type === 'char') {
+            //results.push(-1);
+            //b++;
+            //o++;
+          //} else {
+            //throw new Error('Assertion error: there\'s an unknown set of operations');
+          //}
+        //} else if (bop) {
+          //if (bop.type === 'rem') {
+            //results.push(-1);
+            //b++;
+          //} else if (isRetain(oo)) {
+            //results.push(1);
+            //b++;
+            //o++;
+          //} else {
+            //throw new Error('Assertion error: there\'s an unknown set of operations');
+          //}
+        //} else if (cop) {
+          //if (cop.type === 'char' && isInsert(oo)) {
+            //results.push(oo);
+            //c++;
+            //o++;
+          //} else {
+            //throw new Error('Assertion error: there\'s an unknown set of operations');
+          //}
+        //}
+      //}
 
-    optimalOps = expandOps(baseOps, optimalOps, retRemCount);
+      //return compressOps(results);
+    //}
+
+    //optimalOps = expandOps(comparedOpsWithPos, baseOpsWithPos, optimalOps);
 
 
-    return new Operation(optimalOps);
+    return new Operation(newExpandOps(optimalOps, baseOpsWithPos, retRemCount));
   }
 
   constructor(ops: Array<PrimitiveOperation> = []) {
