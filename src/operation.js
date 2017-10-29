@@ -193,6 +193,12 @@ export default class Operation {
     function expandOps(ops: SingleOperations, allBaseOps: SingleOperations, retRemCount: number): Array<PrimitiveOperation> {
       const compressedOps = [];
       let count = 0;
+      const remLookup = {};
+      allBaseOps.forEach((op) => {
+        if (op.type === 'rem') {
+          remLookup[op.pos] = op;
+        }
+      });
 
       ops.forEach((op) => {
         if (count === op.pos && op.type === 'ret') {
@@ -201,9 +207,8 @@ export default class Operation {
           // do nothing
         } else if (count < op.pos) {
           let remCount = 0;
-          // TODO: avoid the N lookup here
           for (let i = count; i < op.pos; i++) {
-            if (!allBaseOps.find(o => o.type === 'rem' && o.pos === i)) {
+            if (!remLookup[i]) {
               remCount++;
             }
           }
