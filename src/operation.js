@@ -17,8 +17,10 @@ function isRemove(op: ?PrimitiveOperation): boolean {
   return typeof op === 'number' && op < 0;
 }
 
-type SingleOperation = { type: 'char', char: string, pos: number, sourcePos: number, source: 'base' | 'compared' } |
-  { type: 'ret' | 'rem', pos: number, sourcePos: number, source: 'base' | 'compared' };
+export type CharOperation = { type: 'char', char: string, pos: number, sourcePos: number, source: 'base' | 'compared' | 'both' };
+
+type RetRemOperation = { type: 'ret' | 'rem', pos: number, sourcePos: number, source: 'base' | 'compared' | 'both' };
+type SingleOperation = CharOperation | RetRemOperation;
 type SingleOperations = Array<SingleOperation>;
 
 type DPArray = Array<Array<{ distance: number, ops: Array<SingleOperation> }>>;
