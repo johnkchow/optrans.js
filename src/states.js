@@ -78,15 +78,6 @@ export class AwaitingAckState implements State {
     logOp('AwaitingAckState.serverBuffer', this.serverBuffer);
     logOp('AwaitingAckState.clientBuffer', this.clientBuffer);
 
-    Logger.debug('AwaitingAckState - composing op to serverBuffer');
-    const newServerBuffer = this.serverBuffer.compose(op);
-
-    // eslint-disable-next-line max-len
-    const [clientPrime, serverPrime] = LineageOperation.transform(this.clientBuffer, newServerBuffer);
-    Logger.debug(`serverPrime: ${serverPrime.op._ops.toString()}`);
-    Logger.debug(`clientPrime: ${clientPrime.op._ops.toString()}`);
-
-    this.doc.apply(serverPrime);
 
     if (op.id === this.ackOp.id) {
       return new WaitingState(
@@ -94,7 +85,21 @@ export class AwaitingAckState implements State {
         this.opSender,
         op,
       );
-    } else if (op.sourceId === this.ackOp.sourceId) {
+    }
+
+    Logger.debug('AwaitingAckState - composing op to serverBuffer');
+    const newServerBuffer = this.serverBuffer.compose(op);
+
+    // eslint-disable-next-line max-len
+    const [clientPrime, serverPrime] = LineageOperation.transform(this.clientBuffer, newServerBuffer);
+    Logger.debug(`serverPrime: ${serverPrime.op._ops.toString()}`);
+    Logger.debug(`clientPrime: ${clientPrime.toString()}`);
+
+    this.doc.apply(serverPrime);
+
+    if (op.sourceId === this.ackOp.sourceId) {
+      clientPrime.parentId = op.id;
+      clientPrime.sourceId = clientPrime.id;
 
       this.opSender.send(clientPrime);
 

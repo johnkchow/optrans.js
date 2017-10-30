@@ -217,5 +217,17 @@ describe('Operation', () => {
         expect(results[1]._ops).to.ordered.members(['b', 2]);
       });
     });
+
+    describe('when transforming {-2,b,a,j} with {-1,1,b,a,i}', () => {
+      it('should return {-1,3,j}, {2,i,1}', () => {
+        const op1 = new Operation([-2, 'b', 'a', 'j']);
+        const op2 = new Operation([-1, 1, 'b', 'a', 'i']);
+
+        const results = Operation.transform(op1, op2);
+
+        expect(results[0]._ops).to.ordered.members([-1, 3, 'j']);
+        expect(results[1]._ops).to.ordered.members([2, 'i', 1]);
+      });
+    });
   });
 });
