@@ -131,7 +131,7 @@ describe('Operation', () => {
 
         const trans = () => Operation.transform(op1, op2);
 
-        expect(trans).to.throw('Unknown operation transform');
+        expect(trans).to.throw('Assertion failed: there should be no more retains/removes');
       });
     });
 
@@ -142,7 +142,7 @@ describe('Operation', () => {
 
         const trans = () => Operation.transform(op1, op2);
 
-        expect(trans).to.throw('Unknown operation transform');
+        expect(trans).to.throw('Assertion failed: there should be no more retains/removes');
       });
     });
 

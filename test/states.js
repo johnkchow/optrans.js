@@ -109,7 +109,7 @@ describe('WaitingState', () => {
         .applyServer(buildOp([-1, 2], '2s', { id: '3s' }))
         .applyServer(buildOp([1, 'b', 1], '3s', { id: '4s' }));
 
-      let docMock = sinon.mock(doc, 'apply');
+      const docMock = sinon.mock(doc, 'apply');
       let docSpy = docMock.expects('apply').once();
 
       lastState = lastState.applyServer(buildOp([3, 'i'], '4s', { id: '5s', sourceId: '2c' }));
@@ -128,7 +128,6 @@ describe('WaitingState', () => {
       expect(secondOp.sourceId).to.equal(secondOp.id);
       expect(lastState).to.be.an.instanceOf(AwaitingAckState);
 
-      docMock = sinon.mock(doc, 'apply');
       docSpy = docMock.expects('apply').never();
 
       const waitingState = lastState.applyServer(secondOp);
