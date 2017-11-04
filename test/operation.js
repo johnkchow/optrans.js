@@ -1,3 +1,4 @@
+import { expect } from 'chai';
 import Operation from '../src/operation';
 
 describe('Operation', () => {

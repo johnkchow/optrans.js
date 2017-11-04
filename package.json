@@ -6,6 +6,7 @@
     "build": "babel src/ -d lib/",
     "prepublish": "yarn run build",
     "test": "karma start --auto-watch --browsers ChromeHeadless karma.config.js",
+    "test:node": "mocha --compilers js:babel-core/register",
     "test:chrome": "karma start --auto-watch --browsers Chrome karma.config.js",
     "test:server": "karma start --browsers ChromeHeadless karma.config.js"
   },
