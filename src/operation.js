@@ -5,18 +5,38 @@ import Logger from './logger';
 
 import EditDistance from './edit_distance';
 
-type CompressedOperation = number | string;
+type TagAttributes = any;
+type OpenTagOperation = { ty: 'o', v: string, a?: TagAttributes };
+type CloseTagOperation = { ty: 'c', v: string };
+type RetainOperation = { ty: 'rt', v: number };
+type RemoveOperation = { ty: 'rm', v: number };
+type InsertOperation = { ty: 'i', v: string };
+export type CompressedOperation = OpenTagOperation | CloseTagOperation |
+  RetainOperation | RemoveOperation | InsertOperation;
+
+
+export function opToString(op: ?CompressedOperation): string {
+  if (op) {
+    return `${op.ty}:${op.v}`;
+  }
+
+  return '';
+}
+
+export function opsToString(ops: Array<CompressedOperation>): string {
+  return `[${ops.map(o => opToString(o)).join(',')}]`;
+}
 
 function isRetain(op: ?CompressedOperation): boolean {
-  return typeof op === 'number' && op >= 0;
+  return !!(op && op.ty === 'rt');
 }
 
 function isInsert(op: ?CompressedOperation): boolean {
-  return typeof op === 'string';
+  return !!(op && op.ty === 'i');
 }
 
 function isRemove(op: ?CompressedOperation): boolean {
-  return typeof op === 'number' && op < 0;
+  return !!(op && op.ty === 'rm');
 }
 
 export type CharOperation = { type: 'char', char: string, pos: number, sourcePos: number, source: 'base' | 'compared' | 'both' };
@@ -47,13 +67,13 @@ function expandOps(ops: Array<CompressedOperation>, source: 'base' | 'compared')
   ops.forEach((op) => {
     if (isInsert(op)) {
       // $FlowIgnore
-      const str: string = op;
+      const str: string = op.v;
       for (let i = 0; i < str.length; i++) {
         results.push({ type: 'char', char: str[i], pos: counter, sourcePos: i, source });
       }
     } else {
       // $FlowIgnore
-      const count: number = Math.abs(op);
+      const count: number = op.v;
       const type = isRetain(op) ? 'ret' : 'rem';
 
       for (let i = 0; i < count; i++) {
@@ -216,30 +236,32 @@ export default class Operation {
     const lastOp = this._ops[this._ops.length - 1];
 
     if (isRetain(lastOp)) {
-      this._ops[this._ops.length - 1] = lastOp + op;
+      // $FlowIgnore
+      this._ops[this._ops.length - 1].v = lastOp.v + op;
     } else {
-      this._ops.push(op);
+      this._ops.push({ ty: 'rt', v: op });
     }
   }
 
   remove(op: number) {
     const lastOp = this._ops[this._ops.length - 1];
 
-    const neg = -Math.abs(op);
+    const pos = +Math.abs(op);
 
     if (isRemove(lastOp)) {
-      this._ops[this._ops.length - 1] = lastOp + neg;
+      // $FlowIgnore
+      this._ops[this._ops.length - 1].v = lastOp.v - pos;
     } else {
-      this._ops.push(neg);
+      this._ops.push({ ty: 'rm', v: pos });
     }
   }
 
   insert(op: string) {
-    this._ops.push(op);
+    this._ops.push({ ty: 'i', v: op });
   }
 
   compose(op: Operation): Operation {
-    Logger.debug(`compose ops: [${this._ops.toString()}], [${op._ops.toString()}]`);
+    Logger.debug(`compose ops: [${opsToString(this._ops)}], [${opsToString(op._ops)}]`);
     const ops1 = this._ops.slice();
     const ops2 = op._ops.slice();
     const newOp = new Operation();
@@ -248,21 +270,21 @@ export default class Operation {
     let j = 0;
 
     while (i < ops1.length || j < ops2.length) {
-      Logger.debug(`compose (${i}, ${ops1[i]}), (${j}, ${ops2[j]}), [${newOp._ops.toString()}]`);
+      Logger.debug(`compose (${i}, ${opToString(ops1[i])}), (${j}, ${opToString(ops2[j])}), [${opsToString(newOp._ops)}]`);
 
       if (isRetain(ops1[i]) && isRetain(ops2[j])) {
         // $FlowIgnore
-        const p1 = (ops1[i]: number);
+        const p1 = (ops1[i].v: number);
         // $FlowIgnore
-        const p2 = (ops2[j]: number);
+        const p2 = (ops2[j].v: number);
 
         if (p1 < p2) {
           newOp.retain(p1);
-          ops2[j] = p2 - p1;
+          ops2[j] = { ty: 'rt', v: p2 - p1 };
           i++;
         } else if (p1 > p2) {
           newOp.retain(p2);
-          ops1[i] = p1 - p2;
+          ops1[i] = { ty: 'rt', v: p1 - p2 };
           j++;
         } else {
           newOp.retain(p1);
@@ -271,46 +293,46 @@ export default class Operation {
         }
       } else if (isRetain(ops1[i]) && isInsert(ops2[j])) {
         // $FlowIgnore
-        const p2 = (ops2[j]: string);
+        const p2 = (ops2[j].v: string);
 
         newOp.insert(p2);
         j++;
       } else if (isRetain(ops1[i]) && isRemove(ops2[j])) {
         // $FlowIgnore
-        const p1 = (ops1[i]: number);
+        const p1 = (ops1[i].v: number);
         // $FlowIgnore
-        const p2 = (ops2[j]: number);
+        const p2 = (ops2[j].v: number);
 
-        if (p1 + p2 >= 0) {
+        if (p1 - p2 >= 0) {
           newOp.remove(p2);
-          if (p1 + p2 === 0) {
+          if (p1 - p2 === 0) {
             i++;
           } else {
-            ops1[i] = p1 + p2;
+            ops1[i] = { ty: 'rt', v: p1 - p2 };
           }
           j++;
         } else {
-          newOp.remove(p1 + p2);
-          ops2[j] = p1 + p2;
+          newOp.remove(p1 - p2);
+          ops2[j] = { ty: 'rm', v: Math.abs(p1 - p2) };
           i++;
         }
       } else if (isRetain(ops1[i])) {
         // $FlowIgnore
-        newOp.retain((ops1[i]: number));
+        newOp.retain((ops1[i].v: number));
         i++;
       } else if (isRemove(ops1[i])) {
         // $FlowIgnore
-        newOp.remove(ops1[i]);
+        newOp.remove(ops1[i].v);
         i++;
       } else if (isInsert(ops2[j])) {
         // $FlowIgnore
-        newOp.insert(ops2[j]);
+        newOp.insert(ops2[j].v);
         j++;
       } else if (isInsert(ops1[i]) && isRetain(ops2[j])) {
         // $FlowIgnore
-        const p1 = (ops1[i]: string);
+        const p1 = (ops1[i].v: string);
         // $FlowIgnore
-        const p2 = (ops2[j]: number);
+        const p2 = (ops2[j].v: number);
 
         if (p2 >= p1.length) {
           newOp.insert(p1);
@@ -319,51 +341,55 @@ export default class Operation {
           if (p2 === p1.length) {
             j++;
           } else {
-            ops2[j] = p2 - p1.length;
+            ops2[j] = { ty: 'rt', v: p2 - p1.length };
           }
         } else {
           newOp.insert(p1.substring(0, p2 - 1));
 
-          ops1[i] = p1.substring(p2);
+          ops1[i] = { ty: 'i', v: p1.substring(p2) };
           j++;
         }
       } else if (isInsert(ops1[i]) && isRemove(ops2[j])) {
         // $FlowIgnore
-        const p1 = (ops1[i]: string);
+        const p1 = (ops1[i].v: string);
         // $FlowIgnore
-        const p2 = (ops2[j]: number);
+        const p2 = (ops2[j].v: number);
 
-        if (p2 + p1.length === 0) {
+        if (-p2 + p1.length === 0) {
           i++;
           j++;
-        } else if (p2 + p1.length < 0) {
-          ops2[j] = p2 + p1.length;
+        } else if (-p2 + p1.length < 0) {
+          ops2[j] = { ty: 'rm', v: Math.abs(-p2 + p1.length) };
           i++;
           j++;
         } else {
-          ops1[i] = p1.substring(Math.abs(p2));
+          ops1[i] = { ty: 'i', v: p1.substring(p2) };
           i++;
           j++;
         }
       } else if (isInsert(ops1[i])) {
         // $FlowIgnore
-        newOp.insert(ops1[i]);
+        newOp.insert(ops1[i].v);
         i++;
       } else if (isRetain(ops2[j])) {
         // $FlowIgnore
-        newOp.retain(ops2[j]);
+        newOp.retain(ops2[j].v);
         j++;
       } else if (isRemove(ops2[j])) {
         // $FlowIgnore
-        newOp.remove(ops2[j]);
+        newOp.remove(ops2[j].v);
         j++;
       } else {
-        throw new Error(`Unknown operation combinations: ${ops1[i]}, ${ops2[j]}`);
+        throw new Error(`Unknown operation combinations: ${opToString(ops1[i])}, ${opToString(ops2[j])}`);
       }
     }
 
     Logger.debug(`compose newOp: [${newOp._ops.toString()}]`);
 
     return newOp;
+  }
+
+  toString(): string {
+    return opsToString(this._ops);
   }
 }

@@ -4,7 +4,7 @@ import sinon from 'sinon';
 import { expect } from 'chai';
 import { WaitingState, AwaitingAckState } from '../src/states';
 import LineageOperation from '../src/lineage_operation';
-import Operation from '../src/operation';
+import { buildOp as bo, expectOps } from './helpers';
 import type { Document, OpSender } from '../src/client';
 
 let opIdCounter = 0;
@@ -24,13 +24,12 @@ function buildOp(ops: RawOps, parentId: string, { id, sourceId }: { id?: string,
     opId,
     sourceId || opId,
     parentId,
-    new Operation(ops),
+    bo(ops),
   );
 }
 
 function expectOp(actual: LineageOperation, ops: Array<number | string>) {
-  // $FlowIgnore
-  expect(actual.op._ops).to.ordered.members(ops);
+  expectOps(actual.op, ops);
 }
 
 describe('WaitingState', () => {
